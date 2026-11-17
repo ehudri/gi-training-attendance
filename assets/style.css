@@ -156,6 +156,29 @@ dialog::backdrop { background: rgba(20, 28, 32, .45); }
 .projector .pcount { font-size: clamp(18px, 2.4vw, 32px); color: var(--accent); font-weight: 700; }
 .projector .x { position: absolute; top: 12px; left: 12px; }
 
+/* PDF report (rendered off-screen by html2pdf at A4 content width) */
+/* letter-spacing ≠ 0 makes html2canvas place each glyph separately; otherwise it drops the
+   spaces between Hebrew (RTL) words. Hebrew has no joined letters, so per-glyph is safe. */
+.report { width: 700px; background: #fff; color: var(--ink); font-size: 14px; line-height: 1.45; padding: 4px 2px; letter-spacing: .01px; }
+.report .r-brand { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin-bottom: 18px; }
+.report h1 { font-size: 26px; margin: 0 0 16px; }
+.report .r-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 22px; }
+.report .r-meta > div { padding: 10px 14px; border-inline-start: 1px solid var(--line); }
+.report .r-meta > div:first-child { border-inline-start: 0; }
+.report .r-meta span { display: block; font-size: 11px; color: var(--muted); }
+.report .r-meta b { font-size: 15px; }
+.report .r-meta > div:last-child b { color: var(--accent); font-size: 20px; }
+.report .r-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.report .r-table th { background: var(--accent-soft); color: var(--accent); font-weight: 700; text-align: start; padding: 8px 10px; }
+.report .r-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
+.report .r-table th:first-child, .report .r-table td:first-child { width: 28px; color: var(--muted); text-align: center; }
+.report .r-table .num { direction: ltr; text-align: right; font-variant-numeric: tabular-nums; }
+.report .r-empty { color: var(--muted); padding: 20px 0; }
+.report .r-sign { display: flex; gap: 40px; margin-top: 40px; font-size: 14px; }
+.report .r-sign .line { display: inline-block; width: 200px; border-bottom: 1px solid var(--ink); margin-inline-start: 6px; }
+.report .r-sign .line.short { width: 110px; }
+.report .r-foot { margin-top: 28px; color: var(--muted); font-size: 11px; }
+
 #print-area { display: none; }
 @media print {
   body > *:not(#print-area) { display: none !important; }

@@ -110,6 +110,7 @@
           </label>
           <button class="btn secondary sm inline" data-act="qr" type="button">QR</button>
           <button class="btn secondary sm inline" data-act="att" type="button">משתתפים</button>
+          <button class="btn secondary sm inline" data-act="pdf" type="button">דוח PDF</button>
         </div>
       </article>`).join('');
     $('#refreshed').textContent = 'עודכן ' + new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
@@ -128,6 +129,7 @@
     const t = byId(e.target.closest('.titem').dataset.id);
     if (el.dataset.act === 'qr') openQr(t);
     if (el.dataset.act === 'att') openAttendees(t);
+    if (el.dataset.act === 'pdf') exportPdf(t);
     if (el.dataset.act === 'auto') { e.preventDefault(); setState(t, 'auto'); }
   });
   $('#tlist').addEventListener('change', (e) => {
@@ -305,6 +307,126 @@
     resetAddForm();
     toast(r.status === 'already' ? `${r.person.name} כבר רשום/ה` : `נוסף/ה: ${r.person.name}`);
   });
+
+  // ---------- PDF report
+  // The report is laid out as HTML and rasterised into an A4 PDF (html2pdf.js), because
+  // PDF text libraries don't shape Hebrew right-to-left text correctly.
+  const PDF_LIB = {
+    src: 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js',
+    integrity: 'sha384-aBc0BOllaGWrQx51DYt978St/L7B+21jzNGc4N/jnGD0NxGwj8S/ftRgW0AkXIak',
+  };
+  let pdfLib = null;
+  function loadPdfLib() {
+    if (window.html2pdf) return Promise.resolve();
+    if (pdfLib) return pdfLib;
+    pdfLib = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = PDF_LIB.src;
+      s.integrity = PDF_LIB.integrity;
+      s.crossOrigin = 'anonymous';
+      s.onload = resolve;
+      s.onerror = () => { pdfLib = null; reject(new Error('pdf lib')); };
+      document.head.appendChild(s);
+    });
+    return pdfLib;
+  }
+
+  const METHOD_LABEL = { Google: 'Google', 'ידני': 'ידני', 'מנהל': 'ע"י מנהל/ת' };
+
+  function buildReport(t, list) {
+    const now = new Date();
+    const stamp = now.toLocaleDateString('he-IL') + ' ' + now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const el = document.createElement('div');
+    el.className = 'report';
+    el.dir = 'rtl';
+    el.innerHTML = `
+      <div class="r-brand"><span class="brand-mark"></span>המכון לגסטרואנטרולוגיה · דוח נוכחות בהדרכה</div>
+      <h1>${esc(t.name)}</h1>
+      <div class="r-meta">
+        <div><span>תאריך</span><b>${esc(formatDate(t.date))}</b></div>
+        <div><span>קטגוריה</span><b>${esc(t.category)}</b></div>
+        <div><span>מדריך/ה</span><b>${esc(t.instructor || '—')}</b></div>
+        <div><span>משתתפים</span><b>${list.length}</b></div>
+      </div>
+      ${list.length ? `
+      <table class="r-table">
+        <thead><tr><th>#</th><th>שם מלא</th><th>תפקיד</th><th>מספר עובד</th><th>שעת רישום</th><th>אופן רישום</th></tr></thead>
+        <tbody>${list.map((a, i) => `<tr>
+          <td>${i + 1}</td><td>${esc(a.name)}</td><td>${esc(a.role)}</td>
+          <td class="num">${esc(a.empNo)}</td><td class="num">${esc(a.time || '—')}</td>
+          <td>${esc(METHOD_LABEL[a.method] || a.method || '—')}</td></tr>`).join('')}
+        </tbody>
+      </table>` : '<p class="r-empty">לא נרשמו משתתפים להדרכה זו.</p>'}
+      <div class="r-sign">
+        <div>חתימת המדריך/ה: <span class="line"></span></div>
+        <div>תאריך: <span class="line short"></span></div>
+      </div>
+      <div class="r-foot">הופק ${esc(stamp)} · מזהה הדרכה ${esc(t.id)}</div>`;
+    return el;
+  }
+
+  function pdfOptions(t) {
+    const safe = (s) => String(s).replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    return {
+      margin: [12, 12, 14, 12],
+      filename: `נוכחות - ${safe(t.name)} - ${formatShortDate(t.date)}.pdf`,
+      image: { type: 'jpeg', quality: 0.96 },
+      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.r-sign'] },
+    };
+  }
+
+  /**
+   * Builds the PDF for training `t` with attendee `list`.
+   * mode 'save' downloads it; 'blob' returns the file; 'canvas' returns the rendered page image.
+   */
+  async function renderPdf(t, list, mode) {
+    await loadPdfLib();
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    // html2canvas shifts content sideways when the *page* is RTL, clipping the right edge.
+    // Render with an LTR page; the report element itself stays dir="rtl".
+    const root = document.documentElement;
+    const prevDir = root.dir;
+    root.dir = 'ltr';
+    try {
+      return await pdfWorker(t, list, mode);
+    } finally {
+      root.dir = prevDir;
+    }
+  }
+
+  function pdfWorker(t, list, mode) {
+    const base = html2pdf().set(pdfOptions(t)).from(buildReport(t, list));
+    if (mode === 'canvas') return base.toCanvas().get('canvas');
+    const w = base.toPdf().get('pdf').then((pdf) => {
+      const n = pdf.internal.getNumberOfPages();
+      if (n < 2) return;
+      for (let i = 1; i <= n; i++) { // page numbers (digits only – jsPDF fonts have no Hebrew)
+        pdf.setPage(i);
+        pdf.setFontSize(9);
+        pdf.setTextColor(120);
+        pdf.text(`${i} / ${n}`, 105, 290, { align: 'center' });
+      }
+    });
+    return mode === 'blob' ? w.outputPdf('blob') : w.save();
+  }
+
+  async function exportPdf(t) {
+    busy(true);
+    try {
+      const [r] = await Promise.all([call('attendees', { t: t.id }), loadPdfLib()]);
+      if (!r.ok) { if (r.code !== 'auth' && r.code !== 'forbidden') toast(r.message || 'טעינת המשתתפים נכשלה'); return; }
+      await renderPdf(t, r.attendees, 'save');
+      toast('הדוח ירד למכשיר');
+    } catch (e) {
+      toast('יצירת ה-PDF נכשלה. נסו שוב.');
+    } finally {
+      busy(false);
+    }
+  }
+  $('#btn-att-pdf').addEventListener('click', () => exportPdf(current));
+  window.AdminReport = { buildReport, renderPdf }; // used for testing the layout
 
   // ---------- maintenance
   $('#btn-rebuild').addEventListener('click', async () => {
