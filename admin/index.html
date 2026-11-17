@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b6e79">
+  <meta name="robots" content="noindex">
+  <title>ניהול הדרכות</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+  <main class="wrap wide">
+    <div class="brand"><span class="brand-mark"></span>המכון לגסטרואנטרולוגיה · הדרכות צוות</div>
+    <div class="topbar">
+      <h1>ניהול הדרכות</h1>
+      <div class="who-admin" id="who" hidden>
+        <span id="who-email"></span> ·
+        <button class="linkbtn" id="signout" type="button" style="padding:4px">יציאה</button>
+      </div>
+    </div>
+
+    <section id="v-loading"><div class="spinner" role="status" aria-label="טוען"></div></section>
+
+    <section id="v-signin" hidden>
+      <div class="card stack center" style="max-width:480px;margin-inline:auto">
+        <h2 style="margin:0">כניסה למנהלים</h2>
+        <p class="muted small" style="margin:0">הכניסה מותרת רק לחשבונות שמופיעים בלשונית "הגדרות" בגיליון.</p>
+        <div id="gbtn" class="gbtn"></div>
+        <p class="error" id="signin-err" role="alert"></p>
+      </div>
+    </section>
+
+    <section id="v-app" hidden>
+      <button class="btn" id="btn-new" type="button" style="margin-bottom:28px">+ הדרכה חדשה</button>
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">הדרכות</h2>
+        <span class="muted small" id="refreshed"></span>
+      </div>
+      <div class="tlist" id="tlist"></div>
+      <p class="empty" id="tlist-empty" hidden>עדיין אין הדרכות. לחצו על "הדרכה חדשה" כדי להתחיל.</p>
+
+      <div class="card" style="margin-top:40px">
+        <h2>הגיליון</h2>
+        <div class="row">
+          <a class="btn secondary sm inline" id="sheet-link" target="_blank" rel="noopener">פתיחת הגיליון</a>
+          <button class="btn ghost sm inline" id="btn-rebuild" type="button">בנייה מחדש של "נוכחות"</button>
+        </div>
+        <p class="hint">"בנייה מחדש" משחזרת את לשונית "נוכחות" מתוך היומן, למקרה שמישהו ערך אותה ידנית.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- new training -->
+  <dialog id="d-new" aria-labelledby="d-new-title">
+    <form class="dlg" id="f-new" novalidate>
+      <div class="dlg-head"><h2 id="d-new-title">הדרכה חדשה</h2><button class="x" type="button" data-close aria-label="סגירה">×</button></div>
+      <div class="field"><label for="n-name">שם / נושא ההדרכה</label><input id="n-name" name="name" required maxlength="120"></div>
+      <div class="field"><label for="n-date">תאריך</label><input id="n-date" name="date" type="date" required></div>
+      <div class="field"><label for="n-cat">קטגוריה</label><select id="n-cat" name="category" required></select></div>
+      <div class="field"><label for="n-instr">מדריך/ה <span class="muted small">(לא חובה)</span></label><input id="n-instr" name="instructor" maxlength="80"></div>
+      <button class="btn" type="submit">יצירת הדרכה והצגת QR</button>
+      <p class="error" id="new-err" role="alert"></p>
+    </form>
+  </dialog>
+
+  <!-- QR -->
+  <dialog id="d-qr" aria-labelledby="qr-title">
+    <div class="dlg center">
+      <div class="dlg-head"><div style="text-align:start"><h2 id="qr-title"></h2><div class="muted small" id="qr-meta"></div></div><button class="x" type="button" data-close aria-label="סגירה">×</button></div>
+      <div class="qr" id="qr-box"></div>
+      <div class="linkbox">
+        <input id="qr-link" readonly aria-label="קישור לרישום">
+        <button class="btn secondary sm inline" id="btn-copy" type="button">העתקה</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btn-proj" type="button">מסך מלא למקרן</button>
+        <button class="btn secondary" id="btn-print" type="button">הדפסה</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- attendees -->
+  <dialog id="d-att" aria-labelledby="att-title">
+    <div class="dlg">
+      <div class="dlg-head"><div><h2 id="att-title"></h2><div class="muted small" id="att-meta"></div></div><button class="x" type="button" data-close aria-label="סגירה">×</button></div>
+      <ul class="alist" id="att-list"></ul>
+      <form id="f-add" class="card" style="background:var(--bg);box-shadow:none;margin:0" novalidate>
+        <h2 style="font-size:18px">הוספת משתתף/ת ידנית</h2>
+        <div class="field">
+          <label for="a-emp">מספר עובד</label>
+          <input id="a-emp" name="empNo" inputmode="numeric" list="people" required autocomplete="off">
+          <div class="hint" id="a-who"></div>
+        </div>
+        <div id="a-new" hidden>
+          <div class="field"><label for="a-name">שם מלא בעברית</label><input id="a-name" name="name" maxlength="60"></div>
+          <div class="field"><label for="a-role">תפקיד</label><input id="a-role" name="role" list="roles" maxlength="40"></div>
+        </div>
+        <button class="btn" type="submit">הוספה להדרכה</button>
+        <p class="error" id="add-err" role="alert"></p>
+      </form>
+    </div>
+  </dialog>
+
+  <datalist id="people"></datalist>
+  <datalist id="roles"></datalist>
+
+  <!-- projector -->
+  <div class="projector" id="projector" hidden>
+    <button class="x" type="button" id="proj-close" aria-label="סגירה">×</button>
+    <div><h1 id="proj-title"></h1><div class="sub" id="proj-sub"></div></div>
+    <div class="qrbig" id="proj-qr"></div>
+    <div><div class="sub">סרקו את הקוד לרישום נוכחות</div><div class="pcount" id="proj-count"></div></div>
+  </div>
+
+  <!-- print -->
+  <div id="print-area">
+    <h1 id="pr-title"></h1>
+    <div class="p-sub" id="pr-sub"></div>
+    <div class="p-qr" id="pr-qr"></div>
+    <div class="p-call">סרקו לרישום נוכחות</div>
+    <div class="p-url" id="pr-url"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
+  <script src="../config.js"></script>
+  <script src="../assets/common.js"></script>
+  <script src="../assets/admin.js"></script>
+</body>
+</html>
