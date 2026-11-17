@@ -86,7 +86,7 @@ function fail_(code, message, extra) {
 
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(25000)) fail_('busy', 'המערכת עמוסה כרגע. נסו שוב בעוד כמה שניות.');
+  if (!lock.tryLock(60000)) fail_('busy', 'המערכת עמוסה כרגע. נסו שוב בעוד כמה שניות.');
   try {
     const out = fn();
     SpreadsheetApp.flush();
@@ -107,22 +107,29 @@ function apiTraining_(req) {
  * Google check-in. Identity = verified ID token. If this Google account is not
  * yet in the registry, the client must send `profile` {name, role, empNo} once.
  */
+/*
+ * Check-ins keep the locked section as short as possible: the training, the token and
+ * (for returning people) the registry lookup happen before the lock. The registry is
+ * append-only, so a person found outside the lock is still valid inside it; only
+ * creating a new person re-reads the registry under the lock to avoid duplicates.
+ */
 function apiCheckinGoogle_(req) {
   const user = verifyIdToken_(req.idToken);
-  const t0 = getTraining_(req.t);
-  if (!isOpen_(t0)) fail_('closed', 'הרישום להדרכה זו סגור', { training: publicTraining_(t0) });
+  const t = openTraining_(req.t);
+  const findBySub = function (p) { return p.sub && p.sub === user.sub; };
+  let person = readPeople_().find(findBySub);
+  let prof = null;
+  if (!person) {
+    if (!req.profile) {
+      fail_('need_profile', 'נדרשים פרטים להשלמת הרישום הראשון', { email: user.email, googleName: user.name });
+    }
+    prof = validateProfile_(req.profile);
+  }
 
   return withLock_(function () {
-    const t = getTraining_(req.t); // re-read under lock
-    if (!isOpen_(t)) fail_('closed', 'הרישום להדרכה זו סגור', { training: publicTraining_(t) });
-    const people = readPeople_();
-    let person = people.find(function (p) { return p.sub && p.sub === user.sub; });
     if (!person) {
-      if (!req.profile) {
-        fail_('need_profile', 'נדרשים פרטים להשלמת הרישום הראשון', { email: user.email, googleName: user.name });
-      }
-      const prof = validateProfile_(req.profile);
-      person = people.find(function (p) { return p.empNo === prof.empNo; });
+      const people = readPeople_();
+      person = people.find(findBySub) || people.find(function (p) { return p.empNo === prof.empNo; });
       if (person) {
         if (!person.sub) linkGoogle_(person, user);
       } else {
@@ -137,18 +144,22 @@ function apiCheckinGoogle_(req) {
 
 function apiCheckinManual_(req) {
   const prof = validateProfile_(req);
-  const t0 = getTraining_(req.t);
-  if (!isOpen_(t0)) fail_('closed', 'הרישום להדרכה זו סגור', { training: publicTraining_(t0) });
+  const t = openTraining_(req.t);
+  const byEmp = function (p) { return p.empNo === prof.empNo; };
+  let person = readPeople_().find(byEmp);
 
   return withLock_(function () {
-    const t = getTraining_(req.t);
-    if (!isOpen_(t)) fail_('closed', 'הרישום להדרכה זו סגור', { training: publicTraining_(t) });
-    let person = readPeople_().find(function (p) { return p.empNo === prof.empNo; });
-    if (!person) person = addPerson_(prof, null);
+    if (!person) person = readPeople_().find(byEmp) || addPerson_(prof, null);
     const res = mark_(t, person, true);
     if (res.changed) log_(t.id, person, METHOD.MANUAL, ACTION.ADD, '', '');
     return { status: res.changed ? 'checked_in' : 'already', person: publicPerson_(person), training: publicTraining_(t) };
   });
+}
+
+function openTraining_(id) {
+  const t = getTraining_(id);
+  if (!isOpen_(t)) fail_('closed', 'הרישום להדרכה זו סגור', { training: publicTraining_(t) });
+  return t;
 }
 
 // ---------------------------------------------------------------- admin API
@@ -543,12 +554,12 @@ function readTrainings_() {
   const sh = sheet_(SHEET.TRAININGS);
   const n = sh.getLastRow() - 1;
   if (n < 1) return [];
-  const raw = sh.getRange(2, 3, n, 1).getValues();
-  return sh.getRange(2, 1, n, 6).getDisplayValues().map(function (r, i) {
+  const str = function (v) { return String(v == null ? '' : v).trim(); };
+  return sh.getRange(2, 1, n, 6).getValues().map(function (r, i) {
     // the date is stored as text; tolerate a hand-edited cell that Sheets turned into a real date
-    const d = raw[i][0] instanceof Date ? Utilities.formatDate(raw[i][0], TZ, 'yyyy-MM-dd') : r[2].trim();
-    return { row: i + 2, id: r[0].trim(), name: r[1], date: d, category: r[3], instructor: r[4],
-      state: r[5].trim() || STATE.AUTO };
+    const d = r[2] instanceof Date ? Utilities.formatDate(r[2], TZ, 'yyyy-MM-dd') : str(r[2]);
+    return { row: i + 2, id: str(r[0]), name: str(r[1]), date: d, category: str(r[3]), instructor: str(r[4]),
+      state: str(r[5]) || STATE.AUTO };
   }).filter(function (t) { return t.id; });
 }
 

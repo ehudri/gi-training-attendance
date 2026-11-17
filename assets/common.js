@@ -5,7 +5,7 @@
   /** POST JSON to the Apps Script web app (text/plain avoids a CORS preflight). */
   async function api(action, data) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 45000);
+    const timer = setTimeout(() => ctrl.abort(), 100000); // server may wait up to 60s for the lock
     let res;
     try {
       res = await fetch(CFG.API_URL, {
@@ -107,6 +107,8 @@
       document.body.appendChild(o);
     }
     o.hidden = !on;
+    // Modal <dialog>s sit above the overlay, so also disable their buttons to stop double submits.
+    document.querySelectorAll('button[type="submit"], dialog button').forEach(b => { b.disabled = on; });
   }
 
   let toastTimer;
